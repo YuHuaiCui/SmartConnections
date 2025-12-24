@@ -1,5 +1,6 @@
 # Smart Connections
 A small quality of life mod that makes connecting machines in Upload Labs faster and less annoying.
+<video src="media/demo.mp4" controls></video>
 
 ## What it does
 In the base game you need to drag your wire all the way to the exact input or output slot on the target machine. This mod removes that precision requirement (no more moving around your screen to find the exact slot!).  
