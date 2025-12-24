@@ -1,0 +1,30 @@
+{
+	"dependencies": [],
+	"description": "No more tiny port hunting. Just drag a connection anywhere onto a machine and the mod snaps it to the right slot for you. Faster, cleaner, and way less annoying.",
+	"extra": {
+		"godot": {
+			"authors": [
+				"Daniel \"Helios\" Cui"
+			],
+			"compatible_game_version": [
+				"2.0.19"
+			],
+			"compatible_mod_loader_version": [
+				"7.0.0"
+			],
+			"config_schema": {
+
+			},
+			"description_rich": "",
+			"image": null,
+			"incompatibilities": [],
+			"load_before": [],
+			"optional_dependencies": [],
+			"tags": []
+		}
+	},
+	"name": "SmartConnections",
+	"namespace": "Helios",
+	"version_number": "1.0.0",
+	"website_url": "https://github.com/exampleauthor/examplemod"
+}
