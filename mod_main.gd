@@ -127,6 +127,10 @@ func find_compatible_connector(source_container: ResourceContainer, source_type:
     return null
 
 func can_containers_connect(source: ResourceContainer, target: ResourceContainer, source_type: int) -> bool:
+    # Prevent self-connections - a container cannot connect to itself
+    if source.id == target.id:
+        return false
+
     # Determine the connection direction
     if source_type == Utils.connections_types.OUTPUT:
         # Source is output, target should be input
