@@ -1,159 +1,158 @@
 extends Node
+## Smart Connections Mod
+## Automatically connects dropped connections to compatible containers on hovered windows.
 
-const MOD_NAME_LOG = "SmartConnections"
+const MOD_NAME = "SmartConnections"
 
-var currently_hovered_window: WindowBase = null
-var is_dragging_connection: bool = false
 
-func _init():
-    ModLoaderLog.info("Initializing Smart Connections mod", MOD_NAME_LOG)
+func _init() -> void:
+    ModLoaderLog.info("Initializing", MOD_NAME)
 
-func _ready():
-    # Connect to connection signals to track when we're dragging
-    Signals.connection_set.connect(_on_connection_state_changed)
+
+func _ready() -> void:
     Signals.connection_droppped.connect(_on_connection_dropped)
-    
-    # Hook into all window mouse enter/exit events
-    setup_window_hover_detection()
-    
-    ModLoaderLog.info("Smart Connections mod ready", MOD_NAME_LOG)
+    ModLoaderLog.info("Ready", MOD_NAME)
 
-func setup_window_hover_detection():
-    # Wait for desktop to be ready, then setup hover detection on all windows
-    if Signals.desktop_ready.is_connected(_on_desktop_ready):
+
+# =============================================================================
+# SIGNAL HANDLERS
+# =============================================================================
+
+func _on_connection_dropped(source_id: String, source_type: int) -> void:
+    if source_id.is_empty():
         return
-    Signals.desktop_ready.connect(_on_desktop_ready)
-    
-    # Also listen for new windows being created
-    Signals.window_initialized.connect(_on_window_initialized)
 
-func _on_desktop_ready():
-    # Setup hover detection for existing windows
-    for window in get_all_windows():
-        setup_window_hover(window)
-
-func _on_window_initialized(window: WindowBase):
-    # Setup hover detection for newly created windows
-    setup_window_hover(window)
-
-func get_all_windows() -> Array:
-    var windows = []
-    if Globals.desktop:
-        # Windows are inside the "Windows" container, not direct children of desktop
-        var windows_container = Globals.desktop.get_node_or_null("Windows")
-        if windows_container:
-            for child in windows_container.get_children():
-                if child is WindowBase:
-                    windows.append(child)
-    return windows
-
-func setup_window_hover(window: WindowBase):
-    if not window:
+    var target_window := _get_window_at_mouse()
+    if not target_window:
         return
-        
-    # Connect mouse enter/exit signals for the window
-    if not window.mouse_entered.is_connected(_on_window_mouse_entered.bind(window)):
-        window.mouse_entered.connect(_on_window_mouse_entered.bind(window))
-    
-    if not window.mouse_exited.is_connected(_on_window_mouse_exited.bind(window)):
-        window.mouse_exited.connect(_on_window_mouse_exited.bind(window))
 
-func _on_window_mouse_entered(window: WindowBase):
-    currently_hovered_window = window
+    # Don't smart-connect within the same window
+    var source_window := _get_container_window(source_id)
+    if source_window == target_window:
+        return
 
-func _on_window_mouse_exited(window: WindowBase):
-    if currently_hovered_window == window:
-        currently_hovered_window = null
+    _attempt_smart_connection(source_id, source_type, target_window)
 
-func get_window_at_mouse_position() -> WindowBase:
-    if not Globals.desktop:
+
+# =============================================================================
+# CONNECTION LOGIC
+# =============================================================================
+
+func _attempt_smart_connection(source_id: String, source_type: int, target_window: WindowBase) -> void:
+    var source := Globals.desktop.get_resource(source_id) as ResourceContainer
+    if not is_instance_valid(source):
+        return
+
+    var target := _find_compatible_container(source, source_type, target_window)
+    if not target:
+        return
+
+    # Create connection with correct direction
+    if source_type == Utils.connections_types.OUTPUT:
+        if target.input_id.is_empty():  # Only connect if target has no input
+            _create_connection(source_id, target.id)
+    elif source_type == Utils.connections_types.INPUT:
+        _create_connection(target.id, source_id)
+
+
+func _find_compatible_container(source: ResourceContainer, source_type: int, window: WindowBase) -> ResourceContainer:
+    if not "containers" in window:
         return null
 
-    # Use global mouse position to match the coordinate system windows use
-    var mouse_pos = Globals.desktop.get_global_mouse_position()
+    var containers = window.get("containers")
+    if not containers:
+        return null
 
-    # Check all windows to see if the mouse is over any of them
-    # Go in reverse order to check top windows first
-    var windows = get_all_windows()
+    for container in containers:
+        if _can_connect(source, container, source_type):
+            return container
 
-    for i in range(windows.size() - 1, -1, -1):
-        var window = windows[i]
-        if is_mouse_over_window(window, mouse_pos):
+    return null
+
+
+func _can_connect(source: ResourceContainer, target: ResourceContainer, source_type: int) -> bool:
+    if not is_instance_valid(source) or not is_instance_valid(target):
+        return false
+
+    if source.id == target.id:
+        return false
+
+    if source_type == Utils.connections_types.OUTPUT:
+        # Source OUTPUT -> Target INPUT
+        if not _has_output_connector(source) or not _has_input_connector(target):
+            return false
+        if source.get_connector_color() == "black":
+            return false
+        if not target.input_id.is_empty():
+            return false
+        return source.can_connect(target)
+
+    elif source_type == Utils.connections_types.INPUT:
+        # Target OUTPUT -> Source INPUT
+        if not _has_output_connector(target) or not _has_input_connector(source):
+            return false
+        if target.get_connector_color() == "black":
+            return false
+        return target.can_connect(source)
+
+    return false
+
+
+func _create_connection(output_id: String, input_id: String) -> void:
+    var output := Globals.desktop.get_resource(output_id) as ResourceContainer
+    var input := Globals.desktop.get_resource(input_id) as ResourceContainer
+
+    if not _has_output_connector(output) or not _has_input_connector(input):
+        return
+
+    Signals.create_connection.emit(output_id, input_id)
+    Sound.play("connect")
+    ModLoaderLog.info("Connected: %s -> %s" % [output_id, input_id], MOD_NAME)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+func _has_output_connector(container: ResourceContainer) -> bool:
+    return is_instance_valid(container) and container.has_node("OutputConnector")
+
+
+func _has_input_connector(container: ResourceContainer) -> bool:
+    return is_instance_valid(container) and container.has_node("InputConnector")
+
+
+func _get_container_window(container_id: String) -> WindowBase:
+    var container := Globals.desktop.get_resource(container_id)
+    if not is_instance_valid(container):
+        return null
+
+    var node: Node = container
+    while node:
+        if node is WindowBase:
+            return node
+        node = node.get_parent()
+    return null
+
+
+func _get_window_at_mouse() -> WindowBase:
+    if not is_instance_valid(Globals.desktop):
+        return null
+
+    var mouse_pos := Globals.desktop.get_global_mouse_position()
+    var windows_node := Globals.desktop.get_node_or_null("Windows")
+    if not windows_node:
+        return null
+
+    # Check windows in reverse order (topmost first)
+    var children := windows_node.get_children()
+    for i in range(children.size() - 1, -1, -1):
+        var window = children[i]
+        if window is WindowBase and _is_point_in_window(window, mouse_pos):
             return window
 
     return null
 
-func is_mouse_over_window(window: WindowBase, mouse_pos: Vector2) -> bool:
-    # Calculate the window's rect from its position and size
-    var window_rect = Rect2(window.global_position, window.size)
-    return window_rect.has_point(mouse_pos)
 
-func _on_connection_state_changed():
-    # Update dragging state based on global connection state
-    is_dragging_connection = !Globals.connecting.is_empty()
-
-func _on_connection_dropped(connection_id: String, connection_type: int):
-    # Find which window is under the mouse cursor
-    var window_under_mouse = get_window_at_mouse_position()
-
-    # If there's a window under the mouse while dropping a connection, try to auto-connect
-    if window_under_mouse and not connection_id.is_empty():
-        attempt_smart_connection(connection_id, connection_type, window_under_mouse)
-
-func attempt_smart_connection(source_id: String, source_type: int, target_window: WindowBase):
-    var source_container = Globals.desktop.get_resource(source_id)
-    if not source_container:
-        return
-
-    # Find a compatible connector on the target window
-    var target_container = find_compatible_connector(source_container, source_type, target_window)
-
-    if target_container:
-        # Create the connection
-        if source_type == Utils.connections_types.OUTPUT:
-            # Source is output, target should be input
-            if target_container.input_id.is_empty() or can_replace_connection(target_container):
-                create_connection(source_id, target_container.id)
-        else:
-            # Source is input, target should be output
-            create_connection(target_container.id, source_id)
-
-func find_compatible_connector(source_container: ResourceContainer, source_type: int, target_window: WindowBase) -> ResourceContainer:
-    # Look through all containers in the target window
-    for container in target_window.containers:
-        if can_containers_connect(source_container, container, source_type):
-            return container
-    
-    return null
-
-func can_containers_connect(source: ResourceContainer, target: ResourceContainer, source_type: int) -> bool:
-    # Prevent self-connections - a container cannot connect to itself
-    if source.id == target.id:
-        return false
-
-    # Determine the connection direction
-    if source_type == Utils.connections_types.OUTPUT:
-        # Source is output, target should be input
-        if not target.input_id.is_empty() and not can_replace_connection(target):
-            return false
-        return source.can_connect(target)
-    else:
-        # Source is input, target should be output
-        if target.get_connector_color() == "black":  # No output
-            return false
-        return target.can_connect(source)
-
-func can_replace_connection(container: ResourceContainer) -> bool:
-    # Allow replacing connections if the user preference allows it
-    # For now, we'll be conservative and not replace existing connections
-    return false
-
-func create_connection(output_id: String, input_id: String):
-    # Use the game's existing connection creation system
-    Signals.create_connection.emit(output_id, input_id)
-    
-    # Play connection sound
-    Sound.play("connect")
-    
-    # Log the smart connection
-    ModLoaderLog.info("Smart connection created: %s -> %s" % [output_id, input_id], MOD_NAME_LOG)
+func _is_point_in_window(window: WindowBase, point: Vector2) -> bool:
+    return Rect2(window.global_position, window.size).has_point(point)
