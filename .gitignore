@@ -1,0 +1,12 @@
+# Godot-specific
+.import/
+.godot/
+*.tmp
+
+# Exports
+export/
+*.zip
+
+# User-specific
+.godot/
+*.uid
