@@ -11,6 +11,7 @@ func _init() -> void:
 
 func _ready() -> void:
     Signals.connection_droppped.connect(_on_connection_dropped)
+    Signals.delete_connection.connect(_on_delete_connection)
     ModLoaderLog.info("Ready", MOD_NAME)
 
 
@@ -33,6 +34,11 @@ func _on_connection_dropped(source_id: String, source_type: int) -> void:
 
     _attempt_smart_connection(source_id, source_type, target_window)
 
+func _on_delete_connection(output: String, input: String) -> void:
+    var outputContainer := Globals.desktop.get_resource(output)
+    if !outputContainer:
+        return
+    outputContainer.remove_output(input)
 
 # =============================================================================
 # CONNECTION LOGIC
